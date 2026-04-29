@@ -8,6 +8,8 @@ import (
 	"os"
 	"strconv"
 	"unicode/utf8"
+
+	"slices"
 )
 
 //go:embed UnicodeData-15.0.0d5.txt
@@ -17,7 +19,8 @@ var lines [][]byte
 
 var just = flag.Bool("just", false, "print just the first matched code point")
 var cl = flag.String("cl", "", "show only symbols from the specified class")
-var fuzzy = flag.Bool("f", false, "perform a fuzzy search and print the counterweight for sorting")
+
+var pscore = flag.Bool("s", false, "print fuzzy search score")
 var glyph = flag.String("g", "", "give a description to the specified unicode glyph; incompatible with other flags")
 
 func bye(msg string) {
@@ -29,18 +32,17 @@ func main() {
 	flag.Parse()
 	query := bytes.ToUpper([]byte(flag.Arg(0)))
 	lines = bytes.Split(unicodeData, []byte{'\n'})
-	if (*fuzzy || *cl != "" || *just) && *glyph != "" {
+	if (*cl != "" || *just) && *glyph != "" {
 		bye("-g is incompatible with other flags")
 	}
+	strs := []string{}
+	nonzero := []string{}
 
 	for _, line := range lines {
 		if bytes.Contains(line, []byte("<control>")) {
 			continue
 		}
 		if score := containsSeq(line, query); score >= 0 {
-			if !*fuzzy && score != 0 {
-				continue
-			}
 			cols := bytes.SplitN(line, []byte{';'}, 2)
 			if *cl != "" {
 				cols := bytes.SplitN(cols[1], []byte{';'}, 3)
@@ -64,12 +66,25 @@ func main() {
 				fmt.Printf("%c", cp)
 				os.Exit(0)
 			}
-			if *fuzzy {
-				fmt.Printf("%v\t%c\t%s\t%s\n", score, cp, cols[0], cols[1])
+			s := ""
+			if *pscore {
+				s = fmt.Sprintf("%3d\t", score)
+			}
+			o := fmt.Sprintf("%s%c\t%s\t%s", s, cp, cols[0], cols[1])
+
+			if score == 0 {
+				strs = append(strs, o)
 			} else {
-				fmt.Printf("%c\t%s\t%s\n", cp, cols[0], cols[1])
+				nonzero = append(nonzero, o)
 			}
 		}
+	}
+	slices.Sort(nonzero)
+	for _, v := range strs {
+		fmt.Println(v)
+	}
+	for _, v := range nonzero {
+		fmt.Println(v)
 	}
 }
 
